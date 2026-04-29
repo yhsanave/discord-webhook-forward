@@ -4,10 +4,12 @@ const roWebhookURL = "";
 const forwardURL = "";
 
 // Sheet Configs
-const eventStartCell = { sheet: "Settings", cell: "F4" };
-const eventEndCell = { sheet: "Settings", cell: "F5" };
-const ciCell = { sheet: "Schedule", cell: "S6"};
-const roCell = { sheet: "Schedule", cell: "T6"};
+const eventStartCell = { sheet: "Settings", address: "F4" };
+const eventEndCell = { sheet: "Settings", address: "F5" };
+const ciCell = { sheet: "Schedule", address: "S6" };
+const roCell = { sheet: "Schedule", address: "T6" };
+const nextHourTeamRange = { sheet: "Schedule", address: "M6:Q6" }
+const nextHourCell = { sheet: "Schedule", address: "B6" }
 
 /* 
 Automated notifications addon for @infinite_penguin's PRSK tiering shedule.
@@ -38,8 +40,8 @@ DO NOT SHARE this sheet or script publicly, or with anyone you don't trust, once
 
 function notify() {
   // Don't send messages before event start and delete trigger after event end.
-  const eventStartTimestamp = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(eventStartCell.sheet).getRange(eventStartCell.cell).getValue();
-  const eventEndTimestamp = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(eventEndCell.sheet).getRange(eventEndCell.cell).getValue();
+  const eventStartTimestamp = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(eventStartCell.sheet).getRange(eventStartCell.address).getValue();
+  const eventEndTimestamp = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(eventEndCell.sheet).getRange(eventEndCell.address).getValue();
   if (Date.now() / 1000 < eventStartTimestamp - 3600) { return; }
   if (Date.now() / 1000 > eventEndTimestamp) {
     const triggers = ScriptApp.getProjectTriggers();
@@ -52,36 +54,40 @@ function notify() {
 
   // Only send between :40 and :50
   const currTime = new Date();
-  if (currTime.getMinutes() < 40 || currTime.getMinutes >= 50) {
+  if (currTime.getMinutes() < 40 || currTime.getMinutes() >= 50) {
     Logger.log('Not time to send yet. Skipping.');
     return;
   }
 
   // Check in message
-  var ciMessage = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ciCell.sheet).getRange(ciCell.cell).getValue();
-  if (ciMessage != "") {
-    var ciContent = {
-      'content': ciMessage,
-      'embeds': [],
-      'attachments': []
+  const ciMessage = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ciCell.sheet).getRange(ciCell.address).getValue();
+  if (ciMessage == "" || ciMessage == "^") {
+    Logger.log("No check-in needed. Skipping.");
+  } else {
+    const ciContent = {
+      'content': ciMessage
     };
     sendMessage(ciContent, ciWebhookURL);
-  } else {
-    Logger.log("No check-in needed. Skipping.");
   }
 
   // Room order message
-  var roMessage = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(roCell.sheet).getRange(roCell.cell).getValue();
-  if (roMessage != "") {
-    var roContent = {
-      'content': roMessage,
-      'embeds': [],
-      'attachments': []
+  const roMessage = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(roCell.sheet).getRange(roCell.address).getValue();
+  if (roMessage == "") {
+    Logger.log("No room order message needed. Skipping.");
+  } else {
+    const roContent = {
+      'content': roMessage.toString().endsWith("needs teams") ? getNextHourSlotsMessage() : roMessage
     };
     sendMessage(roContent, roWebhookURL);
-  } else {
-    Logger.log("No room order message needed. Skipping.");
   }
+}
+
+// Handling for unfilled hours
+function getNextHourSlotsMessage() {
+  const fillers = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nextHourTeamRange.sheet).getRange(nextHourTeamRange.address).getValues()[0];
+  const nextHour = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nextHourCell.sheet).getRange(nextHourCell.address).getValue();
+  const emptySlots = fillers.filter(f => f == "").length;
+  return `Room is **+${emptySlots}** next hour (${nextHour})\n**Currently signed up:** ${fillers.filter(f => f != "").join(", ")}`;
 }
 
 function sendMessage(content, webhookURL) {
